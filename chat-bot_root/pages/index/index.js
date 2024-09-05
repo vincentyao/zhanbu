@@ -1,15 +1,34 @@
-const app = getApp()
+const app = getApp();
 
 Page({
   data: {
     messages: [],
     inputValue: '',
     sendButtonDisabled: true,
-    zodiacSigns: ['白羊座', '金牛座', '双子座', '巨蟹座', '狮子座', '处女座', '天秤座', '天蝎座', '射手座', '摩羯座', '水瓶座', '双鱼座']
+    isTyping: false,
+    typingMessage: '',
+    scrollViewId: '',
+    retryCount: 0,
+    maxRetries: 3,
+    requestTask: null,
+    pollInterval: null
   },
 
   onLoad: function() {
     console.log('Page loaded');
+  },
+
+  onUnload: function() {
+    this.clearConnection();
+  },
+
+  clearConnection: function() {
+    if (this.data.requestTask) {
+      this.data.requestTask.abort();
+    }
+    if (this.data.pollInterval) {
+      clearInterval(this.data.pollInterval);
+    }
   },
 
   onInput: function(e) {
@@ -20,87 +39,167 @@ Page({
   },
 
   onSend: function() {
+    console.log('onSend function called');
     if (this.data.inputValue.trim() === '') return;
 
     const userInput = this.data.inputValue.trim();
     this.addMessage(userInput, true);
 
-    if (this.isValidZodiacSign(userInput)) {
-      this.setData({
-        inputValue: '',
-        sendButtonDisabled: true
-      });
-      this.getHoroscopeFromAPI(userInput);
-    } else {
-      const errorMessage = "输入错误，请重新输入：白羊座、金牛座、双子座、巨蟹座、狮子座、处女座、天秤座、天蝎座、射手座、摩羯座、水瓶座、双鱼座";
-      this.addMessage(errorMessage, false, true);
+    const userMessages = this.data.messages
+      .filter(message => message.isUser)
+      .map(message => message.content);
+
+    if (userMessages.length === 0) {
+      userMessages.push(userInput);
     }
+
+    this.setData({
+      inputValue: '',
+      sendButtonDisabled: true
+    });
+
+    console.log('Sending user messages to backend:', userMessages);
+    this.sendToBackend(userMessages);
   },
 
   addMessage: function(message, isUser, isError = false) {
-    const messages = this.data.messages;
-    messages.push({
+    const newMessages = [...this.data.messages, {
       content: message,
       isUser: isUser,
       isError: isError
-    });
+    }];
+    
     this.setData({
-      messages: messages
+      messages: newMessages,
+      scrollViewId: `msg-${newMessages.length - 1}`
+    }, () => {
+      this.scrollToBottom();
     });
   },
 
-  isValidZodiacSign: function(sign) {
-    return this.data.zodiacSigns.includes(sign);
+  scrollToBottom: function() {
+    wx.nextTick(() => {
+      this.setData({
+        scrollViewId: `msg-${this.data.messages.length - 1}`
+      });
+    });
   },
 
-  getHoroscopeFromAPI: function(sign) {
-    console.log('Fetching horoscope for:', sign);
-    const signInEnglish = this.getEnglishSign(sign);
-    console.log('English sign:', signInEnglish);
+  sendToBackend: function(userMessages) {
+    console.log('sendToBackend called with userMessages:', userMessages);
 
-    const encodedSign = encodeURIComponent(signInEnglish);
-    const url = `https://horoscope-app-api.vercel.app/api/v1/get-horoscope/daily?sign=${encodedSign}&day=TODAY`;
+    const url = 'http://8.134.182.21:8089/completions/stream';
+    const data = {
+      sessionId: "",
+      category: "astrology",
+      messages: userMessages
+    };
 
-    wx.request({
+    console.log('Sending data to backend:', data);
+
+    this.setData({ isTyping: true, typingMessage: '' });
+
+    this.clearConnection(); // 清除之前的连接
+    this.makeRequest(url, data);
+  },
+
+  makeRequest: function(url, data) {
+    const requestTask = wx.request({
       url: url,
-      method: 'GET',
+      method: 'POST',
+      data: data,
       header: {
-        'accept': 'application/json',
-        'accept-language': 'en,zh-CN;q=0.9,zh;q=0.8'
+        'Content-Type': 'application/json',
+        'Connection': 'keep-alive'
       },
+      responseType: 'text',
+      timeout: 30000, // 30 秒超时
       success: (res) => {
-        console.log('API response:', res);
-        if (res.statusCode === 200 && res.data && res.data.data && res.data.data.horoscope_data) {
-          const horoscope = res.data.data.horoscope_data;
-          const horoscopeMessage = `${sign}今日运势：\n\n${horoscope}`;
-          this.addMessage(horoscopeMessage, false);
+        console.log('Backend API response received:', res);
+        if (res.statusCode === 200) {
+          console.log('Response data:', res.data);
+          this.processResponse(res.data);
+          this.setData({ retryCount: 0 }); // 重置重试计数
+          this.startPolling(url, data); // 开始轮询
         } else {
-          this.addMessage("抱歉，获取运势信息时出现错误。请稍后再试。", false, true);
+          console.error('Unexpected API response:', res);
+          this.handleRequestError('Unexpected API response', url, data);
         }
       },
       fail: (error) => {
         console.error('API request failed:', error);
-        console.error('Error details:', error.errMsg);
-        this.addMessage(`抱歉，获取运势信息时出现错误。错误信息: ${error.errMsg}`, false, true);
+        this.handleRequestError(error.errMsg, url, data);
+      },
+      complete: () => {
+        console.log('Request complete');
+        this.setData({ isTyping: false });
+        if (this.data.typingMessage) {
+          this.addMessage(this.data.typingMessage, false);
+          this.setData({ typingMessage: '' });
+        }
       }
     });
+
+    this.setData({ requestTask: requestTask });
   },
 
-  getEnglishSign: function(chineseSign) {
-    const signMap = {
-      '白羊座': 'Aries',
-      '金牛座': 'Taurus',
-      '双子座': 'Gemini',
-      '巨蟹座': 'Cancer',
-      '狮子座': 'Leo',
-      '处女座': 'Virgo',
-      '天秤座': 'Libra',
-      '天蝎座': 'Scorpio',
-      '射手座': 'Sagittarius',
-      '摩羯座': 'Capricorn',
-      '水瓶座': 'Aquarius',
-      '双鱼座': 'Pisces'
-    };
-    return signMap[chineseSign];
+  startPolling: function(url, data) {
+    // 每 30 秒发送一次轻量级请求以保持连接活跃
+    this.data.pollInterval = setInterval(() => {
+      wx.request({
+        url: url,
+        method: 'HEAD',
+        header: {
+          'Connection': 'keep-alive'
+        },
+        success: (res) => {
+          console.log('Polling successful, connection kept alive');
+        },
+        fail: (error) => {
+          console.error('Polling failed:', error);
+          this.clearConnection();
+        }
+      });
+    }, 30000);
+  },
+
+  handleRequestError: function(errorMessage, url, data) {
+    if (this.data.retryCount < this.data.maxRetries) {
+      console.log(`Retrying request (${this.data.retryCount + 1}/${this.data.maxRetries})`);
+      this.setData({ retryCount: this.data.retryCount + 1 });
+      setTimeout(() => {
+        this.makeRequest(url, data);
+      }, 2000); // 等待 2 秒后重试
+    } else {
+      this.addMessage(`Sorry, there was an error fetching the response. Error: ${errorMessage}`, false, true);
+      this.setData({ retryCount: 0 }); // 重置重试计数
+      this.clearConnection();
+    }
+  },
+
+  processResponse: function(response) {
+    const lines = response.split('\n');
+    let newContent = '';
+
+    for (const line of lines) {
+      if (line.startsWith('data:')) {
+        const content = line.slice(5).trim();
+        if (content === '[DONE]') {
+          console.log('Stream completed');
+          break;
+        }
+        newContent += content;
+      }
+    }
+
+    if (newContent) {
+      this.updateTypingMessage(this.data.typingMessage + newContent);
+    }
+  },
+
+  updateTypingMessage: function(message) {
+    this.setData({ typingMessage: message }, () => {
+      this.scrollToBottom();
+    });
   }
-})
+});
