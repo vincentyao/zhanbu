@@ -1,0 +1,79 @@
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.chat-box {
+  flex: 1;
+  padding: 10px;
+}
+
+.message {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  max-width: 70%;
+  word-wrap: break-word;
+}
+
+.typing {
+  opacity: 0.7;
+}
+/* Add a blinking cursor effect */
+.typing::after {
+  content: '|';
+  animation: blink 0.7s infinite;
+}
+
+@keyframes blink {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.user-message {
+  align-self: flex-end;
+  background-color: #007AFF;
+  color: white;
+}
+
+.bot-message {
+  align-self: flex-start;
+  background-color: #F0F0F0;
+  color: black;
+}
+
+.bot-message.error {
+  color: #FF0000;
+  font-weight: bold;
+}
+
+.input-area {
+  display: flex;
+  padding: 10px;
+  border-top: 1rpx solid #E5E5E5;
+}
+
+.input-box {
+  flex: 1;
+  height: 36px;
+  border: 1rpx solid #CCCCCC;
+  border-radius: 18px;
+  padding: 0 12px;
+}
+
+.send-button {
+  margin-left: 10px;
+  height: 36px;
+  padding: 0 15px;
+  line-height: 36px;
+  background-color: #007AFF;
+  color: white;
+  border-radius: 18px;
+}
+
+.send-button[disabled] {
+  background-color: #CCCCCC;
+  color: #FFFFFF;
+}

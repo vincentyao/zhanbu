@@ -1,0 +1,13 @@
+<view class="chat-container">
+  <scroll-view class="chat-box" scroll-y="true" scroll-into-view="{{messages.length > 0 ? 'msg-' + (messages.length - 1) : ''}}">
+    <block wx:for="{{messages}}" wx:key="index">
+      <view id="msg-{{index}}" class="message {{item.isUser ? 'user-message' : 'bot-message'}} {{item.isError ? 'error' : ''}}">
+        {{item.content}}
+      </view>
+    </block>
+  </scroll-view>
+  <view class="input-area">
+    <input class="input-box" type="text" value="{{inputValue}}" bindinput="onInput" placeholder="输入你想看的星座" />
+    <button class="send-button" bindtap="onSend" disabled="{{sendButtonDisabled}}">发送</button>
+  </view>
+</view>
